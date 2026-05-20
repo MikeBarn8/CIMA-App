@@ -3,6 +3,7 @@ import random
 import json
 import os
 import hashlib
+from tinydb import TinyDB, Query
 
 # ---------------------------------------------------
 # PAGE CONFIG
@@ -10,49 +11,24 @@ import hashlib
 st.set_page_config(page_title="CIMA App", layout="wide")
 
 # ---------------------------------------------------
-# CLEAR ANY OLD CACHE ON STARTUP
+# TINYDB SETUP (PERSISTENT)
 # ---------------------------------------------------
-st.cache_data.clear()
-
-# ---------------------------------------------------
-# ENSURE users.json EXISTS
-# ---------------------------------------------------
-USER_FILE = "users.json"
-
-if not os.path.exists(USER_FILE):
-    with open(USER_FILE, "w") as f:
-        f.write("{}")
-
-
-# ---------------------------------------------------
-# USER DATA HELPERS (NOT CACHED)
-# ---------------------------------------------------
-def load_users():
-    try:
-        with open(USER_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {}
-
-
-def save_users(users):
-    with open(USER_FILE, "w") as f:
-        json.dump(users, f, indent=4)
-
+db = TinyDB("db.json")
+Users = Query()
 
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
+def create_user(username, password):
+    hashed = hash_password(password)
+    db.insert({"username": username, "password": hashed, "scores": []})
 
-def ensure_user(username, password=None):
-    users = load_users()
-    if username not in users:
-        users[username] = {
-            "password": hash_password(password) if password else None,
-            "scores": []
-        }
-        save_users(users)
+def get_user(username):
+    result = db.search(Users.username == username)
+    return result[0] if result else None
 
+def update_user(username, data):
+    db.update(data, Users.username == username)
 
 # ---------------------------------------------------
 # SESSION STATE INITIALISATION
@@ -75,13 +51,11 @@ for key, value in defaults.items():
     if key not in st.session_state:
         st.session_state[key] = value
 
-
 # ---------------------------------------------------
 # HELPERS
 # ---------------------------------------------------
 def rounded_thousand(min_val=1000, max_val=150000):
     return random.randint(min_val // 1000, max_val // 1000) * 1000
-
 
 def make_options(correct):
     options = {correct}
@@ -93,7 +67,6 @@ def make_options(correct):
     options = list(options)
     random.shuffle(options)
     return options
-
 
 # ---------------------------------------------------
 # QUESTION GENERATORS
@@ -117,7 +90,6 @@ def generate_straight_line_question():
     )
     return q, answer, explanation
 
-
 def generate_reducing_balance_question():
     value = rounded_thousand(1000, 150000)
     rate = random.choice([10, 20, 25])
@@ -135,7 +107,6 @@ def generate_reducing_balance_question():
         f"reducing balance. What is the depreciation for Year 1?"
     )
     return q, answer, explanation
-
 
 def generate_mixed_question():
     q_type = random.choice([1, 2, 3])
@@ -164,7 +135,6 @@ def generate_mixed_question():
     )
     return q, answer, explanation
 
-
 # ---------------------------------------------------
 # CACHED QUIZ GENERATION
 # ---------------------------------------------------
@@ -183,7 +153,6 @@ def cached_question_set(difficulty: str):
         questions.append((q, a, options, explanation))
     return questions
 
-
 def start_quiz():
     st.session_state.questions = cached_question_set(st.session_state.difficulty)
     st.session_state.current_index = 0
@@ -191,7 +160,6 @@ def start_quiz():
     st.session_state.show_result = False
     st.session_state.answers = []
     st.session_state.review = False
-
 
 # ---------------------------------------------------
 # LOGIN / SIGNUP
@@ -206,13 +174,13 @@ if st.session_state.user is None:
         password = st.text_input("Password", type="password")
 
         if st.button("Login"):
-            users = load_users()
-            if username not in users:
+            user = get_user(username)
+            if not user:
                 st.error("User does not exist.")
             else:
-                if users[username]["password"] == hash_password(password):
+                if user["password"] == hash_password(password):
                     st.session_state.user = username
-                    st.session_state.user_data = users[username]
+                    st.session_state.user_data = user
                     st.session_state.screen = "module_select"
                     st.rerun()
                 else:
@@ -229,15 +197,13 @@ if st.session_state.user is None:
             elif new_username.strip() == "":
                 st.error("Username cannot be empty.")
             else:
-                users = load_users()
-                if new_username in users:
+                if get_user(new_username):
                     st.error("Username already exists.")
                 else:
-                    ensure_user(new_username, new_password)
+                    create_user(new_username, new_password)
                     st.success("Account created! You can now log in.")
 
     st.stop()
-
 
 # ---------------------------------------------------
 # MODULE SELECT
@@ -257,7 +223,6 @@ if st.session_state.screen == "module_select":
         st.session_state.screen = "module_select"
 
     st.stop()
-
 
 # ---------------------------------------------------
 # DASHBOARD
@@ -293,7 +258,6 @@ if st.session_state.screen == "dashboard":
 
     st.stop()
 
-
 # ---------------------------------------------------
 # F1 HOME
 # ---------------------------------------------------
@@ -307,7 +271,6 @@ if st.session_state.screen == "f1_home":
         st.session_state.screen = "module_select"
 
     st.stop()
-
 
 # ---------------------------------------------------
 # DEPRECIATION MENU
@@ -343,7 +306,6 @@ if st.session_state.screen == "depreciation_menu":
 
     st.stop()
 
-
 # ---------------------------------------------------
 # QUIZ
 # ---------------------------------------------------
@@ -357,16 +319,14 @@ if st.session_state.screen == "quiz":
         st.write("### Quiz Complete!")
         st.write(f"Score: **{st.session_state.score} / {len(st.session_state.questions)}**")
 
-        st.session_state.user_data["scores"].append({
+        user = get_user(st.session_state.user)
+        user["scores"].append({
             "module": "F1",
             "topic": st.session_state.difficulty,
             "score": st.session_state.score,
             "total": len(st.session_state.questions)
         })
-
-        users = load_users()
-        users[st.session_state.user] = st.session_state.user_data
-        save_users(users)
+        update_user(st.session_state.user, user)
 
         if st.button("Review Answers"):
             st.session_state.review = True
