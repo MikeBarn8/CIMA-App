@@ -4,20 +4,30 @@ import json
 import os
 import hashlib
 
-# -----------------------------
-# CONSTANTS / FILES
-# -----------------------------
+# ---------------------------------------------------
+# PAGE CONFIG (Fixes Cloud Loading Speed)
+# ---------------------------------------------------
+st.set_page_config(page_title="CIMA App", layout="wide")
+
+# ---------------------------------------------------
+# ENSURE users.json EXISTS (Fixes Cloud File Errors)
+# ---------------------------------------------------
+if not os.path.exists("users.json"):
+    with open("users.json", "w") as f:
+        f.write("{}")
+
 USER_FILE = "users.json"
 
 
-# -----------------------------
+# ---------------------------------------------------
 # USER DATA HELPERS
-# -----------------------------
+# ---------------------------------------------------
 def load_users():
-    if not os.path.exists(USER_FILE):
+    try:
+        with open(USER_FILE, "r") as f:
+            return json.load(f)
+    except:
         return {}
-    with open(USER_FILE, "r") as f:
-        return json.load(f)
 
 
 def save_users(users):
@@ -39,75 +49,61 @@ def ensure_user(username, password=None):
         save_users(users)
 
 
-# -----------------------------
+# ---------------------------------------------------
 # SESSION STATE INITIALISATION
-# -----------------------------
-if "screen" not in st.session_state:
-    st.session_state.screen = "module_select"
+# ---------------------------------------------------
+defaults = {
+    "screen": "module_select",
+    "user": None,
+    "user_data": None,
+    "difficulty": None,
+    "questions": [],
+    "current_index": 0,
+    "score": 0,
+    "selected_option": None,
+    "show_result": False,
+    "answers": [],
+    "review": False,
+}
 
-if "user" not in st.session_state:
-    st.session_state.user = None
-
-if "user_data" not in st.session_state:
-    st.session_state.user_data = None
-
-if "difficulty" not in st.session_state:
-    st.session_state.difficulty = None
-if "questions" not in st.session_state:
-    st.session_state.questions = []
-if "current_index" not in st.session_state:
-    st.session_state.current_index = 0
-if "score" not in st.session_state:
-    st.session_state.score = 0
-if "selected_option" not in st.session_state:
-    st.session_state.selected_option = None
-if "show_result" not in st.session_state:
-    st.session_state.show_result = False
-if "answers" not in st.session_state:
-    st.session_state.answers = []
-if "review" not in st.session_state:
-    st.session_state.review = False
+for key, value in defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
 
 
-# -----------------------------
-# HELPER: ROUND TO THOUSANDS
-# -----------------------------
+# ---------------------------------------------------
+# HELPERS
+# ---------------------------------------------------
 def rounded_thousand(min_val=1000, max_val=150000):
     return random.randint(min_val // 1000, max_val // 1000) * 1000
 
 
-# -----------------------------
-# HELPER: CREATE MULTIPLE CHOICE OPTIONS
-# -----------------------------
 def make_options(correct):
     options = {correct}
-
     while len(options) < 4:
         wrong_raw = correct * random.uniform(0.6, 1.4)
         wrong = (int(wrong_raw) // 1000) * 1000
         if wrong != correct and wrong > 0:
             options.add(wrong)
-
     options = list(options)
     random.shuffle(options)
     return options
 
 
-# -----------------------------
+# ---------------------------------------------------
 # QUESTION GENERATORS
-# -----------------------------
+# ---------------------------------------------------
 def generate_straight_line_question():
     cost = rounded_thousand(1000, 150000)
     residual = rounded_thousand(0, cost // 2)
     life = random.randint(3, 8)
-
     raw_answer = (cost - residual) / life
     answer = (int(raw_answer) // 1000) * 1000
 
     explanation = (
         "Straight‑line depreciation = (Cost − Residual Value) ÷ Useful Life\n"
         f"= (£{cost:,} − £{residual:,}) ÷ {life}\n"
-        f"= £{answer:,} per year (rounded to nearest £1,000)."
+        f"= £{answer:,} per year (rounded)."
     )
 
     q = (
@@ -120,14 +116,13 @@ def generate_straight_line_question():
 def generate_reducing_balance_question():
     value = rounded_thousand(1000, 150000)
     rate = random.choice([10, 20, 25])
-
     raw_answer = value * (rate / 100)
     answer = (int(raw_answer) // 1000) * 1000
 
     explanation = (
         "Reducing balance depreciation = Book Value × Rate\n"
         f"= £{value:,} × {rate}%\n"
-        f"= £{answer:,} (rounded to nearest £1,000)."
+        f"= £{answer:,} (rounded)."
     )
 
     q = (
@@ -142,7 +137,6 @@ def generate_mixed_question():
 
     if q_type == 1:
         return generate_straight_line_question()
-
     if q_type == 2:
         return generate_reducing_balance_question()
 
@@ -156,19 +150,19 @@ def generate_mixed_question():
     explanation = (
         "Units‑of‑production depreciation = (Cost ÷ Total Units) × Units Produced\n"
         f"= (£{cost:,} ÷ {units_total:,}) × {units_year:,}\n"
-        f"= £{answer:,} (rounded to nearest £1,000)."
+        f"= £{answer:,} (rounded)."
     )
 
     q = (
         f"A machine costing £{cost:,} will produce {units_total:,} units. "
-        f"It produces {units_year:,} units this year. What is the units‑of‑production depreciation?"
+        f"It produces {units_year:,} units this year. What is the depreciation?"
     )
     return q, answer, explanation
 
 
-# -----------------------------
+# ---------------------------------------------------
 # QUIZ SETUP
-# -----------------------------
+# ---------------------------------------------------
 def start_quiz():
     st.session_state.questions = []
     st.session_state.current_index = 0
@@ -189,27 +183,24 @@ def start_quiz():
         st.session_state.questions.append((q, a, options, explanation))
 
 
-# -----------------------------
-# LOGIN / SIGNUP SCREEN
-# -----------------------------
+# ---------------------------------------------------
+# LOGIN / SIGNUP
+# ---------------------------------------------------
 if st.session_state.user is None:
     st.title("CIMA Practice App – Login")
 
     tab_login, tab_signup = st.tabs(["Login", "Create Account"])
 
-    # LOGIN TAB
     with tab_login:
         username = st.text_input("Username")
         password = st.text_input("Password", type="password")
 
         if st.button("Login"):
             users = load_users()
-
             if username not in users:
                 st.error("User does not exist.")
             else:
-                stored_hash = users[username]["password"]
-                if stored_hash == hash_password(password):
+                if users[username]["password"] == hash_password(password):
                     st.session_state.user = username
                     st.session_state.user_data = users[username]
                     st.session_state.screen = "module_select"
@@ -217,7 +208,6 @@ if st.session_state.user is None:
                 else:
                     st.error("Incorrect password.")
 
-    # SIGNUP TAB
     with tab_signup:
         new_username = st.text_input("Create Username")
         new_password = st.text_input("Create Password", type="password")
@@ -239,33 +229,29 @@ if st.session_state.user is None:
     st.stop()
 
 
-# -----------------------------
-# MODULE SELECT SCREEN
-# -----------------------------
+# ---------------------------------------------------
+# MODULE SELECT
+# ---------------------------------------------------
 if st.session_state.screen == "module_select":
     st.title(f"Welcome, {st.session_state.user}")
-    st.write("Select a module to begin:")
 
     if st.button("F1"):
         st.session_state.screen = "f1_home"
-        st.rerun()
 
     if st.button("Progress Dashboard"):
         st.session_state.screen = "dashboard"
-        st.rerun()
 
     if st.button("Logout"):
         st.session_state.user = None
         st.session_state.user_data = None
         st.session_state.screen = "module_select"
-        st.rerun()
 
     st.stop()
 
 
-# -----------------------------
-# PROGRESS DASHBOARD
-# -----------------------------
+# ---------------------------------------------------
+# DASHBOARD
+# ---------------------------------------------------
 if st.session_state.screen == "dashboard":
     st.title(f"{st.session_state.user}'s Progress Dashboard")
 
@@ -289,78 +275,66 @@ if st.session_state.screen == "dashboard":
             })
 
         st.dataframe(table, hide_index=True)
-
         st.write("### Performance Over Time")
         st.line_chart(percents)
 
-    if st.button("Back to Modules"):
+    if st.button("Back"):
         st.session_state.screen = "module_select"
-        st.rerun()
 
     st.stop()
 
 
-# -----------------------------
-# F1 HOME SCREEN
-# -----------------------------
+# ---------------------------------------------------
+# F1 HOME
+# ---------------------------------------------------
 if st.session_state.screen == "f1_home":
     st.title("F1 – Financial Reporting")
-    st.write("Choose a topic:")
 
     if st.button("Depreciation"):
         st.session_state.screen = "depreciation_menu"
-        st.rerun()
 
-    if st.button("Back to Modules"):
+    if st.button("Back"):
         st.session_state.screen = "module_select"
-        st.rerun()
 
     st.stop()
 
 
-# -----------------------------
-# DEPRECIATION MENU
-# -----------------------------
+# ---------------------------------------------------
+# DEPRECIATION MENU (PATCHED — NO RERUN LOOPS)
+# ---------------------------------------------------
 if st.session_state.screen == "depreciation_menu":
     st.title("Depreciation Practice")
-    st.write("Choose a depreciation method:")
 
     if st.button("Straight Line Depreciation"):
         st.session_state.difficulty = "Straight Line"
         st.session_state.screen = "quiz"
-        st.rerun()
 
     if st.button("Reducing Balance Depreciation"):
         st.session_state.difficulty = "Reducing Balance"
         st.session_state.screen = "quiz"
-        st.rerun()
 
     if st.button("Mixed"):
         st.session_state.difficulty = "Mixed"
         st.session_state.screen = "quiz"
-        st.rerun()
 
-    if st.button("Back to F1 Home"):
+    if st.button("Back"):
         st.session_state.screen = "f1_home"
-        st.rerun()
 
     st.stop()
 
 
-# -----------------------------
-# QUIZ SCREEN
-# -----------------------------
+# ---------------------------------------------------
+# QUIZ
+# ---------------------------------------------------
 if st.session_state.screen == "quiz":
 
     if not st.session_state.questions:
         start_quiz()
 
-    # QUIZ COMPLETE
     if st.session_state.current_index >= len(st.session_state.questions):
         st.write("### Quiz Complete!")
-        st.write(f"Your final score: **{st.session_state.score} / {len(st.session_state.questions)}**")
+        st.write(f"Score: **{st.session_state.score} / {len(st.session_state.questions)}**")
 
-        # Save score in memory
         st.session_state.user_data["scores"].append({
             "module": "F1",
             "topic": st.session_state.difficulty,
@@ -368,28 +342,21 @@ if st.session_state.screen == "quiz":
             "total": len(st.session_state.questions)
         })
 
-        # Persist to disk
         users = load_users()
         users[st.session_state.user] = st.session_state.user_data
         save_users(users)
 
         if st.button("Review Answers"):
             st.session_state.review = True
-            st.rerun()
 
-        if st.button("Back to Depreciation Menu"):
+        if st.button("Back"):
             st.session_state.screen = "depreciation_menu"
             st.session_state.difficulty = None
-            st.rerun()
 
         st.stop()
 
-    # REVIEW MODE
     if st.session_state.review:
         st.write("## Review Mode")
-
-        # SUMMARY TABLE
-        st.write("### Summary")
 
         summary_data = []
         correct_count = 0
@@ -407,37 +374,11 @@ if st.session_state.screen == "quiz":
 
         st.dataframe(summary_data, hide_index=True)
 
-        # PERFORMANCE BREAKDOWN
         total = len(st.session_state.answers)
         percentage = round((correct_count / total) * 100)
 
-        st.write("### Performance")
-        st.write(f"**Score:** {correct_count} / {total} ({percentage}%)")
+        st.write(f"### Score: {correct_count}/{total} ({percentage}%)")
 
-        if percentage == 100:
-            st.success("Perfect score — excellent work!")
-        elif percentage >= 70:
-            st.success("Strong performance — you're on track.")
-        elif percentage >= 50:
-            st.warning("Decent, but there’s room to improve.")
-        else:
-            st.error("Keep practising — you’ll get there.")
-
-        # DETAILED QUESTION REVIEW
-        st.write("### Detailed Review")
-
-        for i, (q, selected, correct, explanation) in enumerate(st.session_state.answers, start=1):
-            st.write(f"#### Question {i}")
-            st.write(q)
-
-            if selected == correct:
-                st.success(f"Correct — you answered £{selected:,}")
-            else:
-                st.error(f"Incorrect — you answered £{selected:,}")
-                with st.expander("Why this was incorrect"):
-                    st.info(explanation)
-
-        # RETRY INCORRECT QUESTIONS ONLY
         incorrect_questions = [
             (q, correct, explanation)
             for (q, selected, correct, explanation) in st.session_state.answers
@@ -445,7 +386,7 @@ if st.session_state.screen == "quiz":
         ]
 
         if incorrect_questions:
-            if st.button("Retry Incorrect Questions Only"):
+            if st.button("Retry Incorrect Only"):
                 st.session_state.questions = []
                 st.session_state.current_index = 0
                 st.session_state.score = 0
@@ -458,23 +399,20 @@ if st.session_state.screen == "quiz":
                     st.session_state.questions.append((q, correct, options, explanation))
 
                 st.session_state.screen = "quiz"
-                st.rerun()
 
-        if st.button("Back to Depreciation Menu"):
+        if st.button("Back"):
             st.session_state.screen = "depreciation_menu"
             st.session_state.review = False
             st.session_state.difficulty = None
-            st.rerun()
 
         st.stop()
 
-    # NORMAL QUESTION MODE
     q, correct, options, explanation = st.session_state.questions[st.session_state.current_index]
 
-    st.write(f"### Question {st.session_state.current_index + 1} of {len(st.session_state.questions)}")
+    st.write(f"### Question {st.session_state.current_index + 1}")
     st.write(q)
 
-    st.session_state.selected_option = st.radio("Choose your answer:", options)
+    st.session_state.selected_option = st.radio("Choose:", options)
 
     if st.button("Submit"):
         st.session_state.show_result = True
@@ -484,10 +422,10 @@ if st.session_state.screen == "quiz":
             st.success("Correct!")
             st.session_state.score += 1
         else:
-            st.error(f"Incorrect. The correct answer was £{correct:,}.")
+            st.error(f"Incorrect — correct answer: £{correct:,}")
 
     if st.session_state.show_result:
-        if st.button("Next Question"):
+        if st.button("Next"):
             st.session_state.current_index += 1
             st.session_state.show_result = False
             st.rerun()
