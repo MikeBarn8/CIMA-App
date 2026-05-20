@@ -5,23 +5,24 @@ import os
 import hashlib
 
 # ---------------------------------------------------
-# PAGE CONFIG (Fixes Cloud Loading Speed)
+# PAGE CONFIG
 # ---------------------------------------------------
 st.set_page_config(page_title="CIMA App", layout="wide")
 
 # ---------------------------------------------------
-# ENSURE users.json EXISTS (Fixes Cloud File Errors)
+# ENSURE users.json EXISTS
 # ---------------------------------------------------
-if not os.path.exists("users.json"):
-    with open("users.json", "w") as f:
-        f.write("{}")
-
 USER_FILE = "users.json"
 
+if not os.path.exists(USER_FILE):
+    with open(USER_FILE, "w") as f:
+        f.write("{}")
+
 
 # ---------------------------------------------------
-# USER DATA HELPERS
+# USER DATA HELPERS (CACHED)
 # ---------------------------------------------------
+@st.cache_data
 def load_users():
     try:
         with open(USER_FILE, "r") as f:
@@ -33,6 +34,8 @@ def load_users():
 def save_users(users):
     with open(USER_FILE, "w") as f:
         json.dump(users, f, indent=4)
+    # clear cache so next load_users() sees latest data
+    load_users.clear()
 
 
 def hash_password(password: str) -> str:
@@ -161,26 +164,31 @@ def generate_mixed_question():
 
 
 # ---------------------------------------------------
-# QUIZ SETUP
+# CACHED QUIZ GENERATION
 # ---------------------------------------------------
+@st.cache_data
+def cached_question_set(difficulty: str):
+    generator = {
+        "Straight Line": generate_straight_line_question,
+        "Reducing Balance": generate_reducing_balance_question,
+        "Mixed": generate_mixed_question,
+    }[difficulty]
+
+    questions = []
+    for _ in range(10):
+        q, a, explanation = generator()
+        options = make_options(a)
+        questions.append((q, a, options, explanation))
+    return questions
+
+
 def start_quiz():
-    st.session_state.questions = []
+    st.session_state.questions = cached_question_set(st.session_state.difficulty)
     st.session_state.current_index = 0
     st.session_state.score = 0
     st.session_state.show_result = False
     st.session_state.answers = []
     st.session_state.review = False
-
-    generator = {
-        "Straight Line": generate_straight_line_question,
-        "Reducing Balance": generate_reducing_balance_question,
-        "Mixed": generate_mixed_question,
-    }[st.session_state.difficulty]
-
-    for _ in range(10):
-        q, a, explanation = generator()
-        options = make_options(a)
-        st.session_state.questions.append((q, a, options, explanation))
 
 
 # ---------------------------------------------------
@@ -300,7 +308,7 @@ if st.session_state.screen == "f1_home":
 
 
 # ---------------------------------------------------
-# DEPRECIATION MENU (FINAL VERSION)
+# DEPRECIATION MENU
 # ---------------------------------------------------
 if st.session_state.screen == "depreciation_menu":
     st.title("Depreciation Practice")
@@ -342,6 +350,7 @@ if st.session_state.screen == "quiz":
     if not st.session_state.questions:
         start_quiz()
 
+    # QUIZ COMPLETE
     if st.session_state.current_index >= len(st.session_state.questions):
         st.write("### Quiz Complete!")
         st.write(f"Score: **{st.session_state.score} / {len(st.session_state.questions)}**")
@@ -366,6 +375,7 @@ if st.session_state.screen == "quiz":
 
         st.stop()
 
+    # REVIEW MODE
     if st.session_state.review:
         st.write("## Review Mode")
 
@@ -418,6 +428,7 @@ if st.session_state.screen == "quiz":
 
         st.stop()
 
+    # NORMAL QUESTION MODE
     q, correct, options, explanation = st.session_state.questions[st.session_state.current_index]
 
     st.write(f"### Question {st.session_state.current_index + 1}")
@@ -439,6 +450,5 @@ if st.session_state.screen == "quiz":
         if st.button("Next"):
             st.session_state.current_index += 1
             st.session_state.show_result = False
-            st.rerun()
 
     st.write(f"### Score: {st.session_state.score}")
