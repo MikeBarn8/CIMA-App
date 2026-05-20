@@ -300,21 +300,32 @@ if st.session_state.screen == "f1_home":
 
 
 # ---------------------------------------------------
-# DEPRECIATION MENU (PATCHED — NO RERUN LOOPS)
+# DEPRECIATION MENU (FINAL VERSION)
 # ---------------------------------------------------
 if st.session_state.screen == "depreciation_menu":
     st.title("Depreciation Practice")
 
+    def reset_quiz_state():
+        st.session_state.questions = []
+        st.session_state.current_index = 0
+        st.session_state.score = 0
+        st.session_state.answers = []
+        st.session_state.review = False
+        st.session_state.show_result = False
+
     if st.button("Straight Line Depreciation"):
         st.session_state.difficulty = "Straight Line"
+        reset_quiz_state()
         st.session_state.screen = "quiz"
 
     if st.button("Reducing Balance Depreciation"):
         st.session_state.difficulty = "Reducing Balance"
+        reset_quiz_state()
         st.session_state.screen = "quiz"
 
     if st.button("Mixed"):
         st.session_state.difficulty = "Mixed"
+        reset_quiz_state()
         st.session_state.screen = "quiz"
 
     if st.button("Back"):
