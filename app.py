@@ -10,6 +10,11 @@ import hashlib
 st.set_page_config(page_title="CIMA App", layout="wide")
 
 # ---------------------------------------------------
+# CLEAR ANY OLD CACHE ON STARTUP
+# ---------------------------------------------------
+st.cache_data.clear()
+
+# ---------------------------------------------------
 # ENSURE users.json EXISTS
 # ---------------------------------------------------
 USER_FILE = "users.json"
@@ -20,9 +25,8 @@ if not os.path.exists(USER_FILE):
 
 
 # ---------------------------------------------------
-# USER DATA HELPERS (CACHED)
+# USER DATA HELPERS (NOT CACHED)
 # ---------------------------------------------------
-@st.cache_data
 def load_users():
     try:
         with open(USER_FILE, "r") as f:
@@ -34,8 +38,6 @@ def load_users():
 def save_users(users):
     with open(USER_FILE, "w") as f:
         json.dump(users, f, indent=4)
-    # clear cache so next load_users() sees latest data
-    load_users.clear()
 
 
 def hash_password(password: str) -> str:
